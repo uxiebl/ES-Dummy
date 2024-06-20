@@ -1,0 +1,38 @@
+Blacklist:
+- (Europe)
+- (Japan)
+- (France)
+- (Germany)
+- (Canada)
+- (Korea)
+- (Netherlands)
+- (Australia)
+- '[BIOS'
+- '[DLC'
+- '[UPDATE'
+- (Beta
+- (Rev
+- (Arcade
+- (Proto
+- (Sample
+- (Competition Cart
+- (Pirate
+- (Demo
+ES-DE Path: ~/ES-DE
+Library Path: ~/Emulation/roms
+Linux Systems URL: https://gitlab.com/es-de/emulationstation-de/-/raw/master/resources/systems/linux/es_systems.xml
+Python Path: ~/.venv/bin/python3
+Python Launcher: konsole --separate --hide-menubar --hide-tabbar --fullscreen --notransparency -e "{python_path} %ROM%"
+ROM Archives:
+  gba:
+    - abc123
+  snes:
+    - def456
+    - ghi789
+ROM Extensions:
+- '*7z'
+- '*zip'
+- '*chd'
+- '*rvz'
+Windows Systems URL: https://gitlab.com/es-de/emulationstation-de/-/raw/master/resources/systems/windows/es_systems.xml
+macOS Systems URL: https://gitlab.com/es-de/emulationstation-de/-/raw/master/resources/systems/macos/es_systems.xml
