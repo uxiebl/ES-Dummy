@@ -1,256 +1,482 @@
-import os
+import click
+import yaml
+import logging
+import xml.etree.ElementTree as ET
 import requests
-from bs4 import BeautifulSoup
+import platform
+import re
 
-def read_files(url):
-    # Send a GET request to the URL
-    response = requests.get(url)
+from internetarchive import get_files
+from pathlib import Path
+from typing import Dict, Any
+from pugixml import pugi
+from contextlib import closing
 
-    # Check if the request was successful
-    if response.status_code == 200:
-        # Parse the HTML content using BeautifulSoup
-        soup = BeautifulSoup(response.content, 'html.parser')
-        # Find al the <a> tags with href attributes
-        links = soup.find_all('a', href=True)
 
-        # Include and not include texts to filter out. Feel free to remove/add as necessary.
-        usaTag = '(USA'
-        excludedWords = ['(Beta)', '(Beta 1)', '(Beta 2)', '(Beta 3)', '(Rev 1)', '(Arcade)', '(Proto)', '(Proto 1)', '(Proto 2)', '(Sample)', '(Rev 2)', '(Rev 3)', '(Competition Cart', '(Pirate)', '(Demo)']
+# Define default configuration as a dictionary.
+DEFAULT_CONFIG = {
+    'Python Path': '~/.venv/bin/python3', # /usr/bin/python3
+    'Python Launcher': '{python_path} %ROM%', # konsole --separate --hide-menubar --hide-tabbar --fullscreen --notransparency -e "{python_path} %ROM%"
+    'Library Path': '~/Emulation/roms', # ~/Emulation/roms/thelibrary
+    'ES-DE Path': '~/ES-DE',
+    'Windows Systems URL': 'https://gitlab.com/es-de/emulationstation-de/-/raw/master/resources/systems/windows/es_systems.xml',
+    'Linux Systems URL': 'https://gitlab.com/es-de/emulationstation-de/-/raw/master/resources/systems/linux/es_systems.xml',
+    'macOS Systems URL': 'https://gitlab.com/es-de/emulationstation-de/-/raw/master/resources/systems/macos/es_systems.xml',
+    'Blacklist': ['(Europe)', '(Japan)', '(France)', '(Germany)', '[BIOS', '[DLC', '[UPDATE', '(Beta', '(Rev', '(Arcade', '(Proto', '(Sample', '(Competition Cart', '(Pirate', '(Demo'],
+    'ROM Extensions': ['*7z', '*zip', '*chd', '*rvz'],
+    'ROM Archives': {
+        'gba': ['abc123'],
+        'snes': ['def456', 'ghi789']
+    }
+}
 
-        # Filter only USA full version files
-        zip_links = []
 
-        for link in links:
-            if link['href'].endswith('.zip') and usaTag in link.text:
-                zip_links.append(link.text)
-            elif link['href'].endswith('.7z') and usaTag in link.text:
-                zip_links.append(link.text)
+CONFIG_FILE = './config.yaml'
 
-        #print(zip_links)
 
-        cleaned_list = []
+# Default configuration for the output log.
+logging.basicConfig(
+    filename=Path.joinpath(Path(__file__).parent, Path('./liblog.log')),
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S')
 
-        for link in zip_links:
-            if not any(w in link for w in excludedWords):
-                if '.7z' in link:
-                    link = link.rstrip('.7z')
-                    cleaned_list.append(link)
-                elif '.zip' in link:
-                    link = link.rstrip('.zip')
-                    cleaned_list.append(link)
 
-        #print(cleaned_list)
+# Template for every new file to be generated.
+OUTPUT_TEMPLATE = '''\
+import zipfile
+import py7zr
+import logging
+from pathlib import Path
+from internetarchive import get_files, get_item
 
-        theLibraryPath = os.path.expanduser('~/Emulation/roms/thelibrary')
-        if not os.path.exists(theLibraryPath):
-            os.makedirs(theLibraryPath)
-        else:
-            print("Library path (/roms/thelibrary) already set.")
+title = "{title}"
+file_path = Path("~/Emulation/roms/{emulator}/").expanduser()
+item = get_item("{identifier}")
+file = item.get_file(title)
+log_dir = str(Path(__file__).parent.parent)
 
-        print(url)
+logging.basicConfig(
+    filename=log_dir + '/liblog.log',
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S')
 
-        # Based on your actual url that you use to download games off of, change the strings below to match your urls. I am not able to openly post the links I use due to potential legal issues of downloading roms off the internet.
-        if 'XXXXXXX' in url:         
-            consolePath = theLibraryPath + '/snes'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/nes'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/n64'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/gbc'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/gba'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/gb'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/ps2'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/psp'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/psx'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/mastersystem'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/gamegear'
-            print(consolePath)
-        elif 'XXXXXXX' in url:
-            consolePath = theLibraryPath + '/genesis'
-            print(consolePath)
-        else:
-            print("URL not recognized. Can't create console path.")
+print('Initiating download request for ' + title)
+logging.info('Initiating download request for ' + title)
 
-        if not os.path.exists(consolePath):
-            os.makedirs(consolePath)
-        else:
-            print("Console path already exists.")
+file.download(destdir = file_path, verbose = True, retries = 3)
 
-        # Based on your actual url that you use to download games off of, change the url below to match your urls. I am not able to openly post the links I use due to potential legal issues of downloading roms off the internet.
-        for title in cleaned_list:
-            with open(consolePath + '/' + title + '.py', 'w') as f:
-                f.write(
-                    'import os\n'
-                    'import subprocess\n'
-                    'import requests\n'
-                    'from bs4 import BeautifulSoup\n'
-                    'import zipfile\n'
-                    'import py7zr\n'
-                    '\n'
-                    '# Based on your actual url that you use to download games off of, change the url below to match your urls. I am not able to openly post the links I use due to potential legal issues of downloading roms off the internet.'
-                    'if \'snes\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/snes\')\n'
-                    'elif \'genesis\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/genesis\')\n'
-                    'elif \'nes\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/nes\')\n'
-                    'elif \'n64\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/n64\')\n'
-                    'elif \'gbc\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/gbc\')\n'
-                    'elif \'gba\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/gba\')\n'
-                    'elif \'gb\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/gb\')\n'
-                    'elif \'psx\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/psx\')\n'
-                    'elif \'ps2\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/ps2\')\n'
-                    'elif \'psp\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/psp\')\n'
-                    'elif \'mastersystem\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/mastersystem\')\n'
-                    'elif \'gamegear\' in str(os.path.abspath(__file__)):\n'
-                    '   url = \'XXXXXXX\'\n'
-                    '   file_path = os.path.expanduser(\'~/Emulation/roms/gamegear\')\n'
-                    'else:\n'
-                    '   print("Current directory not recognized.")\n'
-                    '\n'
-                    'response = requests.get(url)\n'
-                    '\n'
-                    'if response.status_code == 200:\n'
-                    '   soup = BeautifulSoup(response.content, \'html.parser\')\n'
-                    '   links = soup.find_all(\'a\', href=True)\n'
-                    '\n'
-                    '   zip_links = []\n'
-                    '   for link in links:\n'
-                    '       if link[\'href\'].endswith(\'.zip\') or link[\'href\'].endswith(\'.7z\'):\n'
-                    '           zip_links.append(link)\n'
-                    '\n'
-                    '   for link in zip_links:\n'
-                    '       if link.text.endswith(\'.zip\'):\n'
-                    '           link_text = link.text.rstrip(\'.zip\')\n'
-                    '       elif link.text.endswith(\'.7z\'):\n'
-                    '           link_text = link.text.rstrip(\'.7z\')\n'
-                    '\n'
-                    '       if link_text in str(os.path.basename(__file__)).rstrip(\'.py\'):\n'
-                    '           full_url = url + \'/\' + link[\'href\']\n'
-                    '           download_response = requests.get(full_url)\n'
-                    '           if download_response.status_code == 200:\n'
-                    '               with open(file_path + \'/\' + link.text, \'wb\') as f:\n'
-                    '                   f.write(download_response.content)\n'
-                    '               print("Download successful.")\n'
-                    '\n'
-                    '               downloaded_file = file_path + \'/\' + link.text\n'
-                    '               if downloaded_file.endswith(\'.zip\'):\n'
-                    '                   with zipfile.ZipFile(downloaded_file, \'r\') as f:\n'
-                    '                       f.extractall(file_path)\n'
-                    '                   os.remove(downloaded_file)\n'
-                    '               elif downloaded_file.endswith(\'.7z\'):\n'
-                    '                   with py7zr.SevenZipFile(downloaded_file, mode=\'r\') as f:\n'
-                    '                       f.extractall(path=file_path)\n'
-                    '                   os.remove(downloaded_file)\n'
-                    '               break\n'
-                    '           else:\n'
-                    '               print("Failed to download.")\n'
-                    '               break\n'
-                    'else:\n'
-                    '   print("Game not found in HTML.")\n'
-                )
-                
+print('Successfully downloaded ' + title)
+logging.info('Successfully downloaded ' + title)
+
+local_filename = Path.joinpath(file_path, title)
+
+if local_filename.is_file():
+    if local_filename.suffix == '.zip': # Extract .zip file
+        with zipfile.ZipFile(local_filename, 'r') as f:
+            f.extractall(file_path)
+        local_filename.unlink()
+        print('Successfully extracted ' + title)
+        logging.info('Successfully extracted ' + title)
+    elif local_filename.suffix == '.7z': # Extract .7z file
+        with py7zr.SevenZipFile(local_filename, mode='r') as f:
+            f.extractall(path=file_path)
+        local_filename.unlink()
+        print('Successfully extracted ' + title)
+        logging.info('Successfully extracted ' + title)
+    elif Path(local_filename).parent != 'psx': # Extract from an extra subfolder
+        Path(local_filename).rename(Path.joinpath(file_path, Path(local_filename).name))
+        Path.rmdir(Path(local_filename).parent)
+        print('Successfully moved ' + title)
+        logging.info('Successfully moved ' + title)
+
+    Path(__file__).unlink()
+'''
+
+
+XML_TEMPLATE = '''\
+<?xml version="1.0"?>
+<{tag}>
+</{tag}>
+'''
+
+
+GAME_TEMPLATE = '''\
+    <game>
+        <path>{path}</path>
+        <altemulator>{command}</altemulator>
+    </game>
+'''
+
+SYSTEMS_TEMPLATE = '''\
+    <system>
+        <name>Library</name>
+        <fullname>The Library</fullname>
+        <path>{library_path}</path>
+        <extension>.py</extension>
+        <command>konsole --separate --hide-menubar --hide-tabbar --fullscreen --notransparency -e "{python_path} %ROM%" & </command>
+        <theme>library</theme>
+    </system>
+'''
+
+
+def generate_config(file_path=CONFIG_FILE, config_preset=DEFAULT_CONFIG) -> None:
+    """General function for generating a configuration file to be used throughout this script."""
+    parent_directory = Path(__file__).parent
+    full_path = Path.joinpath(parent_directory, Path(file_path))
+
+    with open(full_path, 'w') as file:
+        yaml.dump(config_preset, file, default_flow_style=False)
+
+    click.echo(f"Configuration file generated at: {file_path}")
+    logging.info(f"Configuration file generated at: {file_path}")
+
+
+def load_config(file_path=CONFIG_FILE) -> Dict[str, Any]:
+    """Returns specified yaml configuration file contents in the form of a dictionary."""
+    parent_directory = Path(__file__).parent
+    full_path = Path.joinpath(parent_directory, Path(file_path))
+
+    with open(full_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
+
+
+def generate_files(emulator: str, identifier: str) -> None:
+    """Generastes files """
+    click.echo(f'Initiating library population for system: {emulator}')
+    logging.info(f'Initiating library population for system: {emulator}')
+
+    # Load configuration files.
+    config = load_config()
+
+    library_path = Path(config['Library Path']).expanduser()
+    es_path = Path(config['ES-DE Path']).expanduser()
+    rom_extensions = config['ROM Extensions']
+    blacklist = config['Blacklist']
+
+    # Create necessary directories.
+    gamelists_path = Path.joinpath(es_path, Path(f'gamelists/{emulator}'))
+    gamelists_path.mkdir(parents=True, exist_ok=True)
+    library_path.mkdir(parents=True, exist_ok=True)
+
+    console_path = Path.joinpath(library_path, emulator)
+    console_path.mkdir(parents=True, exist_ok=True)
+
+    gamelist_path = Path.joinpath(gamelists_path, Path('gamelist.xml'))
+
+    # Collect data from Internet Archive in the form of an array.
+    fnames = [f.name for f in get_files(identifier, glob_pattern=rom_extensions)]
+
+    content = list()
+    gamelist_tag = 'gameList'
+
+    # If it exists, read gamelist.xml file for future comparisons.
+    if Path.exists(gamelist_path):
+        with open(gamelist_path, 'r') as xml_file:
+            xml_content = xml_file.read()
     else:
-        print("Request failed..")
+        xml_content = str()
+
+    # Iterate through obtained array entries to generate files.
+    for title in fnames:
+        # Filter usable file entries.
+        if not any(w in title for w in blacklist):
+            new_file = Path(title).stem + '.py'
+
+            # In case there are invalid file names
+            try:
+                new_file = new_file.encode('utf-8').decode('utf-8') 
+                rom_py = Path.joinpath(console_path, new_file)
+
+                if not Path.exists(rom_py):
+                    with open(rom_py, 'w', encoding='utf-8') as file:
+                        template = OUTPUT_TEMPLATE.format(title=title, emulator=emulator, identifier=identifier)
+                        file.write(template)
+                        click.echo(f'Successfully generated file: \"{rom_py}\"')
+                        logging.info(f'Successfully generated file: \"{rom_py}\"')
+                else:
+                    click.echo(f'File already exists: \"{rom_py}\"')
+                    logging.error(f'File already exists: \"{rom_py}\"')
+            except OSError as error:
+                click.echo(f'Error creating file: {error}')
+                logging.error(f'Error creating file: {error}')
+            else:
+                # If file was generated, add it to the content array to be inserted into gamelist.xml.
+                gamelist_entry = GAME_TEMPLATE.format(path='./' + new_file, command='Python')
+
+                # Check if entry already exists in gamelist.xml
+                if not gamelist_entry in xml_content:
+                    content.append(gamelist_entry)
+    # Add entries to gamelist.xml and add entry to es_systems.xml if applicable.
+    if content:
+        multi_content = ''.join(content)
+        insert_xml(gamelist_path, gamelist_tag, multi_content)
+        add_system(emulator)
+    else:
+        click.echo(f'All content already exists within \"gamelist.xml\", no content will be added to system: \"{emulator}\"')
+        logging.info(f'All content already exists within \"gamelist.xml\", no content will be added to system: \"{emulator}\"')
 
 
-def addLibrary():
-    xmlPath = os.path.expanduser('~/.emulationstation/custom_systems/es_systems.xml')
-    with open(xmlPath, 'r') as xml_file:
-        xml_content = xml_file.read()
-    #print(xml_content)
+def insert_xml(file_path: Path, tag: str, content: str) -> None:
+    """Brute force string method of opening ES-DE XML files and inserting new contents at the end within a specified tag."""
+    if not Path.exists(file_path):
+        xml_content = XML_TEMPLATE.format(tag=tag)
+    else:
+        with open(file_path, 'r') as xml_file:
+            xml_content = xml_file.read()
 
-    libraryContent = """  <system>
-    <name>Library</name>
-    <fullname>The Library</fullname>
-    <path>~/Emulation/roms/thelibrary</path>
-    <extension>.py</extension>
-    <command>/usr/bin/python3 %ROM%</command>
-    <theme>library</theme>
-  </system>
-"""
+    if not content in xml_content:
+        start_tag = xml_content.find(f'<{tag}>')
+        end_tag = xml_content.find(f'</{tag}>')
 
-    libraryContent = libraryContent.replace('~', os.path.expanduser('~'))
+        # -1 means string was not found. str.find(), str.index(), str.rfind() returns -1 if substring or character is not found.
+        if start_tag != -1 and end_tag != -1:
+            xml_content_modified = xml_content[:end_tag] + content + xml_content[end_tag:]
 
-    startTag = xml_content.find('<systemList>')
-    endTag = xml_content.find('</systemList>')
-
-    if libraryContent not in xml_content:
-        # -1 means string was not found. str.find(), str.index(), str.rfind() returns -1 if substring or character is not found
-        if startTag != -1 and endTag != -1:
-            xml_content_modified = xml_content[:endTag] + libraryContent + xml_content[endTag:]
-            #print(xml_content_modified)
-
-            with open(xmlPath, 'w') as xml_file:
+            with open(file_path, 'w', encoding='utf-8') as xml_file:
                 xml_file.write(xml_content_modified)
+                click.echo(f'Content within \"{tag}\" successfully written to file: \"{file_path}\"')
+                logging.info(f'Content within \"{tag}\" successfully written to file: \"{file_path}\"')
         else:
-            print("<systemList> and </systemList> tags were not found.")
+            click.echo(f'\"<{tag}>\" and \"</{tag}>\" tags were not found within file: \"{file_path}\"')
+            logging.error(f'\"<{tag}>\" and \"</{tag}>\" tags were not found within file: \"{file_path}\"')
     else:
-        print("Library is already added to es_systems.xml.")
+        click.echo(f'Content within \"{tag}\" is already added to file: \"{file_path}\"')
+        logging.error(f'Content within \"{tag}\" is already added to file: \"{file_path}\"')
 
 
-addLibrary()
+def add_gamelist(emulator: str, content: str) -> None:
+    """Adds custom game to gamelist.xml to allow python files to be recognized and executed correctly."""
+    gamelist = pugi.XMLDocument()
+    gamelist_path = Path.joinpath(Path(__file__).parent, 'es_systems.xml')
 
-# Based on your actual url that you use to download games off of, change the url below to match your urls. I am not able to openly post the links I use due to potential legal issues of downloading roms off the internet.
-snes_url = 'XXXXXXX'
-nes_url = 'XXXXXXX'
-n64_url = 'XXXXXXX'
-gbc_url = 'XXXXXXX'
-gba_url = 'XXXXXXX'
-gb_url = 'XXXXXXX'
-psx_url = 'XXXXXXX'
-ps2_url = 'XXXXXXX'
-psp_url = 'XXXXXXX'
-ms_url = 'XXXXXXX'
-genesis_url = 'XXXXXXX'
-gg_url = 'XXXXXXX'
+        if Path.exists(systems_path):
+        systems.load_file(systems_path)
+    else:
+        systems.load_string("<systemList/>")
+    # INCOMPLETE, NOT IN USE
 
-read_files(snes_url)
-read_files(nes_url)
-read_files(n64_url)
-read_files(gbc_url)
-read_files(gba_url)
-read_files(gb_url)
-read_files(psx_url)
-read_files(ps2_url)
-read_files(psp_url)
-read_files(ms_url)
-read_files(genesis_url)
-read_files(gg_url)
+def check_gamelist(emulator: str, file_path: Path) -> bool:
+    """Checks respective gamelist.xml file for matching child nodes and returning Boolean."""
+    #do checks
+    return False
+    # INCOMPLETE, NOT IN USE
+
+
+def pull_reference() -> None:
+    """Downloads the appropriate default es_systems.xml file from GitLab to be referenced in the configurable es_systems.xml file."""
+    os_name = platform.system()
+    config = load_config()
+
+    if os_name == 'Windows':
+        url = config['Windows Systems URL']
+    elif os_name == 'Linux':
+        url = config['Linux Systems URL']
+    elif os_name == 'Darwin':
+        url = config['macOS Systems URL']
+    else:
+        click.echo(f'{os_name} is not currently a supported operating system.')
+        logging.error(f'{os_name} is not currently a supported operating system.')
+
+    if url:
+        file_path = Path.joinpath(Path(__file__).parent, 'es_systems.xml')
+        
+        try:
+            response = requests.get(url)
+
+            if response.status_code == 200:
+                with open(file_path, 'wb') as file:
+                    file.write(response.content)
+                click.echo(f'Downloaded \"es_systems.xml\" reference file successfully: \"{file_path}\"')
+                logging.info(f'Downloaded \"es_systems.xml\" reference file successfully: \"{file_path}\"')
+            else:
+                click.echo(f'Failed to download file. [STATUS_CODE: {response.status_code}]')
+                logging.error(f'Failed to download file. [STATUS_CODE: {response.status_code}]')
+        except requests.exceptions.RequestException as error:
+            click.echo(f"Error downloading file: {error}")
+            logging.error(f"Error downloading file: {error}")
+
+
+def add_system(emulator: str) -> None:
+    """Adds custom system to es_systems.xml by referencing default es_systems.xml file to allow python files to be recognized and executed correctly."""
+    default_systems = pugi.XMLDocument()
+    default_systems_path = Path.joinpath(Path(__file__).parent, 'es_systems.xml')
+
+    # Retrieve new default es_systems.xml file if one was not already downloaded locally.
+    if not Path.exists(default_systems_path):
+        pull_reference()
+    
+    default_systems.load_file(default_systems_path)
+    default_system_list = default_systems.child('systemList')
+
+    config = load_config()
+
+    systems = pugi.XMLDocument()
+    es_path = Path(config['ES-DE Path']).expanduser()
+    systems_path = Path.joinpath(es_path, Path('custom_systems/es_systems.xml'))
+
+    if Path.exists(systems_path):
+        systems.load_file(systems_path)
+    else:
+        systems.load_string("<systemList/>")
+    
+    system_list = systems.child('systemList')
+
+    # Path to python3 to launch specified %ROM% argument, now expected to be within a virtual environment.
+    python_path = Path(config['Python Path']).expanduser()
+
+    # Allows us to launch python through a terminal so we can visualize progress.
+    python_launcher = str(Path(config['Python Launcher'].format(python_path=python_path)))
+    #print(python_launcher)
+
+    # Iterate through the default systemList node to find the specified child node and create a new child to append to the new systemList node.
+    for system in default_system_list.children('system'):
+        name = system.child('name')
+        if name:
+            name_value = name.child_value().strip()
+    
+            if name_value == emulator:
+                # Modify extension node to include python extensions.
+                extension = system.child('extension')
+                extension_value = system.child('extension').child_value()
+                extension.first_child().set_value(f'{extension_value} .py .PY')
+    
+                # Copy first command node and insert at the top of the system node.
+                reference_command = system.children('command')[0]
+                command = system.prepend_copy(reference_command)
+    
+                # Move copied command node after the last command node.
+                last_command = system.children('command')[-1]
+                system.insert_move_after(command, last_command)
+                
+                # Format copied command node to properly execute python scripts.
+                command.first_attribute().set_value('Python')
+                command.first_child().set_value(python_launcher)
+    
+                # Copy and append default system node to new systemList node.
+                system_list.append_copy(system)
+    
+                #if not system in system_list.children('system'):
+                    #new_system = system_list.append_copy(system)
+                    #print(new_system)
+                #else:
+                    #print(f'\"system\" child node already exists within \"systemList\" for file: {systems_path}')
+                break
+    with closing(pugi.FileWriter(systems_path)) as writer:
+        systems.save(writer)
+
+        click.echo(f'Successfully wrote to file: \"{systems_path}\"')
+        logging.info(f'Successfully wrote to file: \"{systems_path}\"')
+
+
+@click.group()
+def cli():
+    """Program for populating emulator frontends with dummy ROM files embedded with a python script for downloading and extracting actual ROM files in their place.
+
+    Intended for downloading ROM titles directly through EmulationStation."""
+    pass
+
+
+@cli.command()
+@click.argument('emulator')
+@click.argument('identifier')
+def populate(emulator: str, identifier: str):
+    """Populates specified emulator system with dummy ROM files pulled from specified Internet Archive identifier"""
+    generate_files(emulator, identifier)
+
+
+@cli.command()
+def populate_all():
+    """Populates all configured emulator systems with dummy ROM files pulled from specified Internet Archive identifier"""
+    click.echo('Populating ROM directories with all available ROM titles')
+    
+    config = load_config()
+
+    for system, archive in config['ROM Archives'].items():
+        for subarchive in archive:
+            generate_files(system, subarchive)
+
+
+@cli.command()
+def clean():
+    """Deleted all dummy ROM files previously populated within specified emulator ROM directories."""
+    config = load_config()
+
+    library_path = Path(config['Library Path']).expanduser()
+    list = Path(library_path).glob('**/*')
+
+    for item in list:
+        if item.suffix == '.py':
+            item.unlink()
+            click.echo(f'Deleted file: \"{item}\"')
+            logging.info(f'Deleted file: \"{item}\"')
+
+
+@cli.command()
+def add_library():
+    """Adds python path to the custom EmulationStation configuration file so that dummy ROM files can be launched correctly"""
+    config = load_config()
+
+    python_path = Path(config['Python Path']).expanduser()
+    library_path = Path(config['Library Path']).expanduser()
+    es_path = Path(config['ES-DE Path']).expanduser()
+    systems_path = Path.joinpath(es_path, Path('custom_systems/es_systems.xml'))
+
+    library_content = SYSTEMS_TEMPLATE.format(library_path=library_path, python_path=python_path)
+    
+    insert_xml(systems_path, 'systemList', library_content)
+
+
+@cli.command()
+def archives():
+    """Print configuration file dictionary contents to test the capabilities of YAML configuration files."""
+    config = load_config()
+
+    for system, archive in config['ROM Archives'].items():
+        for subarchive in archive:
+            click.echo(f'Emulator: {system}, Identifier: {subarchive}')
+
+
+@cli.command()
+@click.argument('emulator')
+@click.argument('identifier')
+def gamelist():
+    """Write to gamelist.xml"""
+    config = load_config()
+    es_path = Path(config['ES-DE Path']).expanduser()
+    gamelist_path = Path.joinpath(es_path, Path('gamelists/gc/gamelist.xml'))
+    
+    content = GAME_TEMPLATE.format(path='', command='python %ROM%')
+    insert_xml(gamelist_path, 'gameList', content)
+
+
+@cli.command()
+def update_resources():
+    """Updates default es_systems.xml resource with the latest version. If there are any significant changes to this file, it is possible that a system may no longer launch correctly."""
+    reference_path = Path.joinpath(Path(__file__).parent, 'es_systems.xml')
+
+    # Deletes old default es_systems.xml file if none was already downloaded locally.
+    if Path.exists(reference_path):
+        reference_path.unlink()
+        click.echo(f'Deleted existing \"es_systems.xml\" file successfully: \"{reference_path}\"')
+        logging.info(f'Deleted existing \"es_systems.xml\" file successfully: \"{reference_path}\"')
+
+    pull_reference()
+
+
+@cli.command()
+@click.argument('emulator')
+def populate_system(emulator: str):
+    """Command for manually adding python support for a given system."""
+    add_system(emulator)
+
+
+if __name__ == '__main__':
+    config_file = Path.joinpath(Path(__file__).parent, 'config.yaml')
+
+    if not Path.exists(config_file):
+        generate_config(config_file)
+
+    cli()
