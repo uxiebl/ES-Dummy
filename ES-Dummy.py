@@ -169,16 +169,6 @@ def generate_files(emulator: str, identifier: str) -> None:
     # Collect data from Internet Archive in the form of an array.
     fnames = [f.name for f in get_files(identifier, glob_pattern=rom_extensions)]
 
-    content = list()
-    gamelist_tag = 'gameList'
-
-    # If it exists, read gamelist.xml file for future comparisons.
-    if Path.exists(gamelist_path):
-        with open(gamelist_path, 'r') as xml_file:
-            xml_content = xml_file.read()
-    else:
-        xml_content = str()
-
     # Iterate through obtained array entries to generate files.
     for title in fnames:
         # Filter usable file entries.
@@ -203,66 +193,52 @@ def generate_files(emulator: str, identifier: str) -> None:
                 click.echo(f'Error creating file: {error}')
                 logging.error(f'Error creating file: {error}')
             else:
-                # If file was generated, add it to the content array to be inserted into gamelist.xml.
-                gamelist_entry = GAME_TEMPLATE.format(path='./' + new_file, command='Python')
-
-                # Check if entry already exists in gamelist.xml
-                if not gamelist_entry in xml_content:
-                    content.append(gamelist_entry)
-    # Add entries to gamelist.xml and add entry to es_systems.xml if applicable.
-    if content:
-        multi_content = ''.join(content)
-        insert_xml(gamelist_path, gamelist_tag, multi_content)
-        add_system(emulator)
-    else:
-        click.echo(f'All content already exists within \"gamelist.xml\", no content will be added to system: \"{emulator}\"')
-        logging.info(f'All content already exists within \"gamelist.xml\", no content will be added to system: \"{emulator}\"')
+                # If file was generated, add it to the gamelist.xml. This new method is currently much slower due to lack of bulk file operations. Support for multiple entries to be added.
+                add_gamelist(emulator, './' + new_file,'Python')
+    # Add entry to es_systems.xml.
+    add_system(emulator)
 
 
-def insert_xml(file_path: Path, tag: str, content: str) -> None:
-    """Brute force string method of opening ES-DE XML files and inserting new contents at the end within a specified tag."""
-    if not Path.exists(file_path):
-        xml_content = XML_TEMPLATE.format(tag=tag)
-    else:
-        with open(file_path, 'r') as xml_file:
-            xml_content = xml_file.read()
-
-    if not content in xml_content:
-        start_tag = xml_content.find(f'<{tag}>')
-        end_tag = xml_content.find(f'</{tag}>')
-
-        # -1 means string was not found. str.find(), str.index(), str.rfind() returns -1 if substring or character is not found.
-        if start_tag != -1 and end_tag != -1:
-            xml_content_modified = xml_content[:end_tag] + content + xml_content[end_tag:]
-
-            with open(file_path, 'w', encoding='utf-8') as xml_file:
-                xml_file.write(xml_content_modified)
-                click.echo(f'Content within \"{tag}\" successfully written to file: \"{file_path}\"')
-                logging.info(f'Content within \"{tag}\" successfully written to file: \"{file_path}\"')
-        else:
-            click.echo(f'\"<{tag}>\" and \"</{tag}>\" tags were not found within file: \"{file_path}\"')
-            logging.error(f'\"<{tag}>\" and \"</{tag}>\" tags were not found within file: \"{file_path}\"')
-    else:
-        click.echo(f'Content within \"{tag}\" is already added to file: \"{file_path}\"')
-        logging.error(f'Content within \"{tag}\" is already added to file: \"{file_path}\"')
-
-
-def add_gamelist(emulator: str, content: str) -> None:
+def add_gamelist(emulator: str, path: str, altemulator: str) -> None:
     """Adds custom game to gamelist.xml to allow python files to be recognized and executed correctly."""
     gamelist = pugi.XMLDocument()
-    gamelist_path = Path.joinpath(Path(__file__).parent, 'es_systems.xml')
+    game_entry = pugi.XMLDocument()
 
-        if Path.exists(systems_path):
-        systems.load_file(systems_path)
+    config = load_config()
+
+    es_path = Path(config['ES-DE Path']).expanduser()
+    gamelists_path = Path.joinpath(es_path, Path(f'gamelists/{emulator}'))
+    gamelists_path.mkdir(parents=True, exist_ok=True)
+
+    gamelist_path = Path.joinpath(gamelists_path, Path('gamelist.xml'))
+
+    if Path.exists(gamelist_path):
+        gamelist.load_file(gamelist_path)
     else:
-        systems.load_string("<systemList/>")
-    # INCOMPLETE, NOT IN USE
+        gamelist.load_string("<gameList/>")
 
-def check_gamelist(emulator: str, file_path: Path) -> bool:
-    """Checks respective gamelist.xml file for matching child nodes and returning Boolean."""
-    #do checks
-    return False
-    # INCOMPLETE, NOT IN USE
+    game_list = gamelist.child('gameList')
+
+    path_list = []
+
+    # Create a list of all path entries.
+    for game in game_list.children('game'):
+        path_list.append(game.child('path').child_value())
+
+    # Check if there any entries already made.
+    if not path in path_list:
+        game_entry.load_string(f'<game><path>{path}</path><altemulator>{altemulator}</altemulator></game>')
+    
+        game_list.append_copy(game_entry.child('game'))
+    
+        with closing(pugi.FileWriter(gamelist_path)) as writer:
+            gamelist.save(writer)
+    
+            click.echo(f'Successfully wrote to file: \"{gamelist_path}\"')
+            logging.info(f'Successfully wrote to file: \"{gamelist_path}\"')
+    else:
+        click.echo(f'Game entry already exists within file: \"{gamelist_path}\"')
+        logging.error(f'Game entry already exists within file: \"{gamelist_path}\"')
 
 
 def pull_reference() -> None:
@@ -444,12 +420,14 @@ def archives():
 @click.argument('identifier')
 def gamelist():
     """Write to gamelist.xml"""
-    config = load_config()
-    es_path = Path(config['ES-DE Path']).expanduser()
-    gamelist_path = Path.joinpath(es_path, Path('gamelists/gc/gamelist.xml'))
+    #config = load_config()
+    #es_path = Path(config['ES-DE Path']).expanduser()
+    #gamelist_path = Path.joinpath(es_path, Path('gamelists/gc/gamelist.xml'))
     
-    content = GAME_TEMPLATE.format(path='', command='python %ROM%')
-    insert_xml(gamelist_path, 'gameList', content)
+    #content = GAME_TEMPLATE.format(path='', command='python %ROM%')
+    #insert_xml(gamelist_path, 'gameList', content)
+
+    add_gamelist('gba', 'test.py')
 
 
 @cli.command()
