@@ -157,14 +157,9 @@ def generate_files(emulator: str, identifier: str) -> None:
     blacklist = config['Blacklist']
 
     # Create necessary directories.
-    gamelists_path = Path.joinpath(es_path, Path(f'gamelists/{emulator}'))
-    gamelists_path.mkdir(parents=True, exist_ok=True)
     library_path.mkdir(parents=True, exist_ok=True)
-
     console_path = Path.joinpath(library_path, emulator)
     console_path.mkdir(parents=True, exist_ok=True)
-
-    gamelist_path = Path.joinpath(gamelists_path, Path('gamelist.xml'))
 
     # Collect data from Internet Archive in the form of an array.
     fnames = [f.name for f in get_files(identifier, glob_pattern=rom_extensions)]
