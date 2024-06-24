@@ -8,7 +8,6 @@ import re
 
 from internetarchive import get_files
 from pathlib import Path
-from typing import Dict, Any
 from pugixml import pugi
 from contextlib import closing
 
@@ -133,7 +132,7 @@ def generate_config(file_path=CONFIG_FILE, config_preset=DEFAULT_CONFIG) -> None
     logging.info(f"Configuration file generated at: {file_path}")
 
 
-def load_config(file_path=CONFIG_FILE) -> Dict[str, Any]:
+def load_config(file_path=CONFIG_FILE) -> dict:
     """Returns specified yaml configuration file contents in the form of a dictionary."""
     parent_directory = Path(__file__).parent
     full_path = Path.joinpath(parent_directory, Path(file_path))
@@ -150,7 +149,6 @@ def generate_files(emulator: str, identifier: str) -> None:
 
     # Load configuration files.
     config = load_config()
-
     library_path = Path(config['Library Path']).expanduser()
     es_path = Path(config['ES-DE Path']).expanduser()
     rom_extensions = config['ROM Extensions']
@@ -163,6 +161,9 @@ def generate_files(emulator: str, identifier: str) -> None:
 
     # Collect data from Internet Archive in the form of an array.
     fnames = [f.name for f in get_files(identifier, glob_pattern=rom_extensions)]
+
+    # Constuct dictionary of games to be added to gamelist.xml.
+    game_entries = {}
 
     # Iterate through obtained array entries to generate files.
     for title in fnames:
@@ -188,13 +189,15 @@ def generate_files(emulator: str, identifier: str) -> None:
                 click.echo(f'Error creating file: {error}')
                 logging.error(f'Error creating file: {error}')
             else:
-                # If file was generated, add it to the gamelist.xml. This new method is currently much slower due to lack of bulk file operations. Support for multiple entries to be added.
-                add_gamelist(emulator, './' + new_file,'Python')
+                # Add game to game_entries dictionary.
+                game_entries['./' + new_file] = 'Python'
     # Add entry to es_systems.xml.
-    add_system(emulator)
+    if game_config:
+        add_gamelist(emulator, game_entries)
+        add_system(emulator)
 
 
-def add_gamelist(emulator: str, path: str, altemulator: str) -> None:
+def add_gamelist(emulator: str, game_entries: dict) -> None:
     """Adds custom game to gamelist.xml to allow python files to be recognized and executed correctly."""
     gamelist = pugi.XMLDocument()
     game_entry = pugi.XMLDocument()
@@ -220,20 +223,22 @@ def add_gamelist(emulator: str, path: str, altemulator: str) -> None:
     for game in game_list.children('game'):
         path_list.append(game.child('path').child_value())
 
-    # Check if there any entries already made.
-    if not path in path_list:
-        game_entry.load_string(f'<game><path>{path}</path><altemulator>{altemulator}</altemulator></game>')
-    
-        game_list.append_copy(game_entry.child('game'))
-    
-        with closing(pugi.FileWriter(gamelist_path)) as writer:
-            gamelist.save(writer)
-    
-            click.echo(f'Successfully wrote to file: \"{gamelist_path}\"')
-            logging.info(f'Successfully wrote to file: \"{gamelist_path}\"')
-    else:
-        click.echo(f'Game entry already exists within file: \"{gamelist_path}\"')
-        logging.error(f'Game entry already exists within file: \"{gamelist_path}\"')
+    # Dump all of game_entries into the gamelist.
+    for path, altemulator in game_entries.items():
+        # Check if there any entries already made and add game entry accordingly.
+        if not path in path_list:
+            game_entry.load_string(f'<game><path>{path}</path><altemulator>{altemulator}</altemulator></game>')
+        
+            game_list.append_copy(game_entry.child('game'))
+        
+            with closing(pugi.FileWriter(gamelist_path)) as writer:
+                gamelist.save(writer)
+        
+                click.echo(f'Successfully wrote to file: \"{gamelist_path}\"')
+                logging.info(f'Successfully wrote to file: \"{gamelist_path}\"')
+        else:
+            click.echo(f'Game entry already exists within file: \"{gamelist_path}\"')
+            logging.error(f'Game entry already exists within file: \"{gamelist_path}\"')
 
 
 def pull_reference() -> None:
