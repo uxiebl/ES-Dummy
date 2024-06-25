@@ -1,15 +1,16 @@
 import click
 import yaml
 import logging
-import xml.etree.ElementTree as ET
 import requests
 import platform
-import re
+import requests
+import validators
 
 from internetarchive import get_files
 from pathlib import Path
 from pugixml import pugi
 from contextlib import closing
+from bs4 import BeautifulSoup
 
 
 # Define default configuration as a dictionary.
@@ -30,6 +31,7 @@ DEFAULT_CONFIG = {
 }
 
 
+# Specify configuration directory.
 CONFIG_FILE = './config.yaml'
 
 
@@ -119,6 +121,44 @@ def load_config(file_path=CONFIG_FILE) -> dict:
     return config
 
 
+def get_html(url: str, filter: list) -> list:
+    """Returns all parsed items under specified url in the form of a list."""
+    click.echo(f'Obtaining files list from URL: {url}')
+    logging.info(f'Obtaining files list from URL: {url}')
+
+    response = requests.get(url)
+
+    # Construct list for filtered links
+    filtered_links = []
+
+    if response.status_code == 200:
+        # Parse the HTML content using BeautifulSoup.
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Find all the <a> tags with href attributes.
+        links = soup.find_all('a', href=True)
+
+        # Iterate through all links and add entries with a matching extension.
+        for link in links:
+            if any(link['href'].endswith(extension.replace('*', '.')) for extension in filter):
+                filtered_links.append(link.text)
+    else:
+        click.echo(f'Request error. [STATUS CODE: {response.status_code}]')
+        logging.error(f'Request error. [STATUS CODE: {response.status_code}]')
+
+    return filtered_links
+
+
+def get_archive(identifier: str, filter: list) -> list:
+    """Returns all items under specified Internet Archive identifier in the form of a list."""
+    click.echo(f'Obtaining files list from Internet Archive identifier: {identifier}')
+    logging.info(f'Obtaining files list from Internet Archive identifier: {identifier}')
+
+    file_names = [file.name for file in get_files(identifier, glob_pattern = filter)]
+
+    return file_names
+
+
 def generate_files(emulator: str, identifier: str) -> None:
     """Generastes files """
     click.echo(f'Initiating library population for system: {emulator}')
@@ -136,14 +176,19 @@ def generate_files(emulator: str, identifier: str) -> None:
     console_path = Path.joinpath(library_path, emulator)
     console_path.mkdir(parents=True, exist_ok=True)
 
-    # Collect data from Internet Archive in the form of an array.
-    fnames = [f.name for f in get_files(identifier, glob_pattern=rom_extensions)]
+    # Check if archive identifier is actually a url to be parsed.
+    if(validators.url(identifier)):
+        # A url was specified, parse data to generate a list.
+        file_names = get_html(identifier, rom_extensions)
+    else:
+        # A url was not specified so it must be an identifier, collect data from Internet Archive in the form of a list.
+        file_names = get_archive(identifier, rom_extensions)
 
     # Constuct dictionary of games to be added to gamelist.xml.
     game_entries = {}
 
     # Iterate through obtained array entries to generate files.
-    for title in fnames:
+    for title in file_names:
         # Filter usable file entries.
         if not any(w in title for w in blacklist):
             new_file = Path(title).stem + '.py'
