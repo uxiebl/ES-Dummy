@@ -192,7 +192,7 @@ def generate_files(emulator: str, identifier: str) -> None:
                 # Add game to game_entries dictionary.
                 game_entries['./' + new_file] = 'Python'
     # Add entry to es_systems.xml.
-    if game_config:
+    if game_entries:
         add_gamelist(emulator, game_entries)
         add_system(emulator)
 
@@ -200,26 +200,28 @@ def generate_files(emulator: str, identifier: str) -> None:
 def add_gamelist(emulator: str, game_entries: dict) -> None:
     """Adds custom game to gamelist.xml to allow python files to be recognized and executed correctly."""
     gamelist = pugi.XMLDocument()
-    game_entry = pugi.XMLDocument()
 
+    # Load configuration files.
     config = load_config()
-
     es_path = Path(config['ES-DE Path']).expanduser()
     gamelists_path = Path.joinpath(es_path, Path(f'gamelists/{emulator}'))
     gamelists_path.mkdir(parents=True, exist_ok=True)
 
+    # Define current gamelist.xml path.
     gamelist_path = Path.joinpath(gamelists_path, Path('gamelist.xml'))
 
+    # Check if gamelist.xml actually exists.
     if Path.exists(gamelist_path):
         gamelist.load_file(gamelist_path)
     else:
         gamelist.load_string("<gameList/>")
 
+    # Define shortcut variable to easily access 'gameList' node.
     game_list = gamelist.child('gameList')
 
+    # Construct list for all path entries.
     path_list = []
 
-    # Create a list of all path entries.
     for game in game_list.children('game'):
         path_list.append(game.child('path').child_value())
 
@@ -227,18 +229,20 @@ def add_gamelist(emulator: str, game_entries: dict) -> None:
     for path, altemulator in game_entries.items():
         # Check if there any entries already made and add game entry accordingly.
         if not path in path_list:
+            game_entry = pugi.XMLDocument()
             game_entry.load_string(f'<game><path>{path}</path><altemulator>{altemulator}</altemulator></game>')
         
             game_list.append_copy(game_entry.child('game'))
-        
-            with closing(pugi.FileWriter(gamelist_path)) as writer:
-                gamelist.save(writer)
-        
-                click.echo(f'Successfully wrote to file: \"{gamelist_path}\"')
-                logging.info(f'Successfully wrote to file: \"{gamelist_path}\"')
         else:
             click.echo(f'Game entry already exists within file: \"{gamelist_path}\"')
             logging.error(f'Game entry already exists within file: \"{gamelist_path}\"')
+
+    # Write to file.
+    with closing(pugi.FileWriter(gamelist_path)) as writer:
+        gamelist.save(writer)
+        
+        click.echo(f'Successfully wrote to file: \"{gamelist_path}\"')
+        logging.info(f'Successfully wrote to file: \"{gamelist_path}\"')
 
 
 def pull_reference() -> None:
