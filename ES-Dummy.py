@@ -94,36 +94,13 @@ if local_filename.is_file():
 '''
 
 
-XML_TEMPLATE = '''\
-<?xml version="1.0"?>
-<{tag}>
-</{tag}>
-'''
-
-
-GAME_TEMPLATE = '''\
-    <game>
-        <path>{path}</path>
-        <altemulator>{command}</altemulator>
-    </game>
-'''
-
-SYSTEMS_TEMPLATE = '''\
-    <system>
-        <name>Library</name>
-        <fullname>The Library</fullname>
-        <path>{library_path}</path>
-        <extension>.py</extension>
-        <command>konsole --separate --hide-menubar --hide-tabbar --fullscreen --notransparency -e "{python_path} %ROM%" & </command>
-        <theme>library</theme>
-    </system>
-'''
-
-
 def generate_config(file_path=CONFIG_FILE, config_preset=DEFAULT_CONFIG) -> None:
     """General function for generating a configuration file to be used throughout this script."""
     parent_directory = Path(__file__).parent
     full_path = Path.joinpath(parent_directory, Path(file_path))
+
+    # Reminder to use launch commands below specifically on SteamOS, need to automate
+    # konsole --separate --hide-menubar --hide-tabbar --fullscreen --notransparency -e "{python_path} %ROM%" & 
 
     with open(full_path, 'w') as file:
         yaml.dump(config_preset, file, default_flow_style=False)
@@ -395,46 +372,6 @@ def clean():
 
 
 @cli.command()
-def add_library():
-    """Adds python path to the custom EmulationStation configuration file so that dummy ROM files can be launched correctly"""
-    config = load_config()
-
-    python_path = Path(config['Python Path']).expanduser()
-    library_path = Path(config['Library Path']).expanduser()
-    es_path = Path(config['ES-DE Path']).expanduser()
-    systems_path = Path.joinpath(es_path, Path('custom_systems/es_systems.xml'))
-
-    library_content = SYSTEMS_TEMPLATE.format(library_path=library_path, python_path=python_path)
-    
-    insert_xml(systems_path, 'systemList', library_content)
-
-
-@cli.command()
-def archives():
-    """Print configuration file dictionary contents to test the capabilities of YAML configuration files."""
-    config = load_config()
-
-    for system, archive in config['ROM Archives'].items():
-        for subarchive in archive:
-            click.echo(f'Emulator: {system}, Identifier: {subarchive}')
-
-
-@cli.command()
-@click.argument('emulator')
-@click.argument('identifier')
-def gamelist():
-    """Write to gamelist.xml"""
-    #config = load_config()
-    #es_path = Path(config['ES-DE Path']).expanduser()
-    #gamelist_path = Path.joinpath(es_path, Path('gamelists/gc/gamelist.xml'))
-    
-    #content = GAME_TEMPLATE.format(path='', command='python %ROM%')
-    #insert_xml(gamelist_path, 'gameList', content)
-
-    add_gamelist('gba', 'test.py')
-
-
-@cli.command()
 def update_resources():
     """Updates default es_systems.xml resource with the latest version. If there are any significant changes to this file, it is possible that a system may no longer launch correctly."""
     reference_path = Path.joinpath(Path(__file__).parent, 'es_systems.xml')
@@ -446,13 +383,6 @@ def update_resources():
         logging.info(f'Deleted existing \"es_systems.xml\" file successfully: \"{reference_path}\"')
 
     pull_reference()
-
-
-@cli.command()
-@click.argument('emulator')
-def populate_system(emulator: str):
-    """Command for manually adding python support for a given system."""
-    add_system(emulator)
 
 
 if __name__ == '__main__':
