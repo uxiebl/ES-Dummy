@@ -32,14 +32,15 @@ python -m pip --version
 ```
 pip install click pyyaml requests internetarchive pugixml bs4 py7zr
 ```
-9. Clone this repository:
+9. Clone this repository to your system:
 ```
 git clone https://github.com/uxiebl/ES-Dummy.git
 ```
 10. Add ROM sources to config.yaml (archive URLs or Internet Archive identifies are accepted)
-11. Run the script to populate library:
+11. Run ES-Dummy.py to populate library:
 ```
 .venv/bin/python ES-Dummy/ES-Dummy.py populate-all
 ```
+## Commands
 
 PAGE UNDER CONSTRUCTION 
