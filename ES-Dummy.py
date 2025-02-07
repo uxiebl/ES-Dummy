@@ -4,13 +4,13 @@ import logging
 import requests
 import platform
 import requests
-import validators
 
 from internetarchive import get_files
 from pathlib import Path
 from pugixml import pugi
 from contextlib import closing
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 
 # Define default configuration as a dictionary.
@@ -158,9 +158,13 @@ def get_archive(identifier: str, filter: list) -> list:
 
     return file_names
 
+def is_url(string: str) -> bool:
+    """Check if string is a valid URL."""
+    result = urlparse(string)
+    return all([result.scheme, result.netloc])
 
 def generate_files(emulator: str, identifier: str) -> None:
-    """Generastes files """
+    """Generastes files."""
     click.echo(f'Initiating library population for system: {emulator}')
     logging.info(f'Initiating library population for system: {emulator}')
 
@@ -177,7 +181,7 @@ def generate_files(emulator: str, identifier: str) -> None:
     console_path.mkdir(parents=True, exist_ok=True)
 
     # Check if archive identifier is actually a url to be parsed.
-    if(validators.url(identifier)):
+    if(is_url(identifier)):
         # A url was specified, parse data to generate a list.
         file_names = get_html(identifier, rom_extensions)
     else:
@@ -316,8 +320,13 @@ def add_system(emulator: str) -> None:
     config = load_config()
 
     systems = pugi.XMLDocument()
-    es_path = Path(config['ES-DE Path']).expanduser()
-    systems_path = Path.joinpath(es_path, Path('custom_systems/es_systems.xml'))
+    es_path = Path(config['ES-DE Path']).expanduser().resolve()
+
+    # Create necessary directories.
+    systems_dir = Path.joinpath(es_path, Path('custom_systems'))
+    systems_dir.mkdir(parents=True, exist_ok=True)
+
+    systems_path = Path.joinpath(systems_dir, Path('es_systems.xml'))
 
     if Path.exists(systems_path):
         systems.load_file(systems_path)
@@ -327,11 +336,10 @@ def add_system(emulator: str) -> None:
     system_list = systems.child('systemList')
 
     # Path to python3 to launch specified %ROM% argument, now expected to be within a virtual environment.
-    python_path = Path(config['Python Path']).expanduser()
+    python_path = Path(config['Python Path']).expanduser().resolve()
 
     # Allows us to launch python through a terminal so we can visualize progress.
     python_launcher = str(Path(config['Python Launcher'].format(python_path=python_path)))
-    #print(python_launcher)
 
     # Iterate through the default systemList node to find the specified child node and create a new child to append to the new systemList node.
     for system in default_system_list.children('system'):
